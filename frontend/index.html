@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ChessSuite - Herramienta todo en uno</title>
+    <title>Creador FEN Pro - ChessSuite</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <div class="app-container">
     <header class="app-header">
-        <h1><i class="fas fa-chess-king"></i> ChessSuite</h1>
+        <h1><i class="fas fa-chess-king"></i> Creador FEN Pro</h1>
         <p>Extracción automática de FEN · Recorte manual · Generación de PDF · Exportación a Lichess</p>
     </header>
 
@@ -20,7 +20,7 @@
         <button class="tab-btn" data-tab="tab-pdf"><i class="fas fa-file-pdf"></i> Generar PDF</button>
     </div>
 
-    <!-- Pestaña Auto -->
+    <!-- ========== PESTAÑA AUTO ========== -->
     <div id="tab-auto" class="tab-content active">
         <div class="card">
             <div class="card-title"><i class="fas fa-upload"></i> Subir imágenes o PDFs</div>
@@ -38,10 +38,24 @@
             </div>
             <div id="autoStatus" style="margin-top:10px; font-weight:500;"></div>
         </div>
-        <div id="autoResults" class="table-wrapper"></div>
+
+        <!-- Resultados con deshacer/rehacer -->
+        <div id="resultContainer" class="hidden">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-list"></i> Resultados
+                    <span class="badge" id="resultCount" style="background:#3498db; color:white; padding:2px 10px; border-radius:20px; font-size:0.9rem;">0</span>
+                </div>
+                <div class="undo-redo-bar" style="display:flex; gap:10px; justify-content:flex-end; margin-bottom:10px;">
+                    <button class="btn btn-outline btn-sm" id="undoBtn" disabled><i class="fas fa-undo"></i> Deshacer</button>
+                    <button class="btn btn-outline btn-sm" id="redoBtn" disabled><i class="fas fa-redo"></i> Rehacer</button>
+                </div>
+                <div id="autoResults" class="table-wrapper"></div>
+            </div>
+        </div>
     </div>
 
-    <!-- Pestaña Recorte manual -->
+    <!-- ========== PESTAÑA RECORTE MANUAL ========== -->
     <div id="tab-crop" class="tab-content">
         <div class="card">
             <div class="card-title"><i class="fas fa-upload"></i> Subir imágenes para recortar</div>
@@ -80,6 +94,7 @@
             </div>
         </div>
 
+        <!-- Galería -->
         <div id="cropGallery" class="card" style="display:none;">
             <div class="card-title">
                 <i class="fas fa-images"></i> Galería de recortes
@@ -102,7 +117,7 @@
         </div>
     </div>
 
-    <!-- Pestaña PDF -->
+    <!-- ========== PESTAÑA PDF ========== -->
     <div id="tab-pdf" class="tab-content">
         <div class="card">
             <div class="card-title"><i class="fas fa-file-pdf"></i> Generar PDF con ejercicios</div>
@@ -115,7 +130,23 @@
         <div id="pdfPreview" class="pdf-preview"></div>
     </div>
 </div>
+
+<!-- ========== MODAL PARA VER RECORTE ========== -->
+<div class="modal" id="cropModal">
+    <div class="modal-content">
+        <button class="modal-close" id="modalClose">&times;</button>
+        <h4 style="margin-bottom:10px;">🔍 Recorte enviado a Chessvision.ai</h4>
+        <img id="modalImage" src="" alt="Recorte">
+        <div class="modal-info" id="modalInfo">
+            <p><strong>Página:</strong> <span id="modalPage">-</span> | <strong>Tablero:</strong> <span id="modalBoard">-</span></p>
+            <p id="modalError" class="error-text"></p>
+        </div>
+    </div>
+</div>
+
+<!-- ========== NOTIFICACIÓN ========== -->
 <div id="notification" class="notification"></div>
+
 <script src="/scripts/main.js"></script>
 <script src="/scripts/crop-editor.js"></script>
 <script src="/scripts/pdf-generator.js"></script>
