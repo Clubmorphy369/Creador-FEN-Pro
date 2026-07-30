@@ -1,6 +1,5 @@
 // ============================================================
-//  EDITOR DE RECORTE PARA LA PESTAÑA AUTO (independiente)
-//  (Copia adaptada de crop-editor.js con prefijo "auto")
+//  EDITOR DE RECORTE PARA LA PESTAÑA AUTO (CUADRÍCULA MEJORADA)
 // ============================================================
 (function() {
     'use strict';
@@ -24,15 +23,15 @@
     const pageCounter = document.getElementById('autoCropPageCounter');
 
     // ============ ESTADO ============
-    let currentImageData = null;        // dataURL de la página actual
+    let currentImageData = null;
     let originalImage = null;
     let originalWidth = 0, originalHeight = 0;
     let cropBoxes = [];
     let activeCropIndex = -1;
-    let pagePatterns = {};              // { pageIndex: [ {x,y,w,h}, ... ] }
+    let pagePatterns = {};
     let currentPageIndex = 0;
     let totalPages = 0;
-    let allPagesData = [];              // dataURLs de todas las páginas
+    let allPagesData = [];
 
     let isDragging = false, isResizing = false, resizeDir = '';
     let startX = 0, startY = 0;
@@ -70,39 +69,60 @@
         return { width: rect.width, height: rect.height };
     }
 
-    // ============ CUADRÍCULA ============
+    // ============ CUADRÍCULA (MEJORADA, VERDE BRILLANTE) ============
     function updateGrid() {
         if (!gridOverlay || !gridToggle) return;
+
+        // Si el toggle está desactivado, ocultar
         if (!gridToggle.checked) {
             gridOverlay.style.display = 'none';
             return;
         }
+
+        // Mostrar la cuadrícula
         gridOverlay.style.display = 'block';
+
+        // Posicionar exactamente sobre la imagen
         const offset = { left: imageOffsetX, top: imageOffsetY };
         const size = getDisplayedImageSize();
+
         gridOverlay.style.left = offset.left + 'px';
         gridOverlay.style.top = offset.top + 'px';
         gridOverlay.style.width = size.width + 'px';
         gridOverlay.style.height = size.height + 'px';
+
+        // Construir la cuadrícula con líneas verdes brillantes y gruesas
         const divisions = gridDivisions;
-        const stepX = 100 / divisions;
-        const stepY = 100 / divisions;
         let bgImage = '';
+
         for (let i = 1; i < divisions; i++) {
             const posX = (i / divisions) * 100;
             const posY = (i / divisions) * 100;
-            bgImage += `
-                linear-gradient(to right, rgba(0,255,0,0.6) 1px, transparent 1px) ${posX}% 0% / ${stepX}% 100%,
-                linear-gradient(to bottom, rgba(0,255,0,0.6) 1px, transparent 1px) 0% ${posY}% / 100% ${stepY}%
-            `;
-            if (i < divisions - 1) bgImage += ', ';
+
+            // Línea vertical (verde brillante, 2px)
+            bgImage += `linear-gradient(to right, rgba(0, 255, 0, 0.8) 0%, rgba(0, 255, 0, 0.8) 2px, transparent 2px, transparent 100%) ${posX}% 0% / 100% 100%, `;
+
+            // Línea horizontal (verde brillante, 2px)
+            bgImage += `linear-gradient(to bottom, rgba(0, 255, 0, 0.8) 0%, rgba(0, 255, 0, 0.8) 2px, transparent 2px, transparent 100%) 0% ${posY}% / 100% 100%`;
+
+            if (i < divisions - 1) {
+                bgImage += ', ';
+            }
         }
+
+        // Si no hay divisiones, limpiar
+        if (divisions <= 1) {
+            bgImage = 'none';
+        }
+
         gridOverlay.style.backgroundImage = bgImage;
         gridOverlay.style.backgroundSize = '100% 100%';
         gridOverlay.style.backgroundRepeat = 'no-repeat';
+        gridOverlay.style.backgroundPosition = '0 0';
         gridOverlay.style.border = 'none';
         gridOverlay.style.backgroundColor = 'transparent';
         gridOverlay.style.boxShadow = 'none';
+        gridOverlay.style.pointerEvents = 'none';
     }
 
     function snapToGrid(value, gridSize) {
@@ -481,9 +501,9 @@
         const section = document.getElementById('autoCropSection');
         if (section) section.style.display = 'none';
         // Restaurar el contenido normal de la pestaña auto
-        document.querySelector('#tab-auto .card:not(#autoCropSection)').style.display = '';
+        const cards = document.querySelectorAll('#tab-auto .card:not(#autoCropSection)');
+        cards.forEach(c => c.style.display = '');
         document.getElementById('autoResults').style.display = '';
-        // Si hay un resultado, mostrarlo
     }
 
     // ============ BOTONES ============
@@ -540,7 +560,6 @@
     if (prevPageBtn) {
         prevPageBtn.addEventListener('click', function() {
             if (currentPageIndex > 0) {
-                // Guardar patrón de la página actual antes de cambiar
                 if (cropBoxes.length > 0) {
                     pagePatterns[currentPageIndex] = getPattern();
                 }
@@ -564,10 +583,13 @@
         closeEditorBtn.addEventListener('click', closeEditor);
     }
 
+    // ============ TOGGLE DE CUADRÍCULA ============
     if (gridToggle) {
         gridToggle.addEventListener('change', function() {
             updateGrid();
         });
+        // Por defecto, activar la cuadrícula al abrir el editor
+        gridToggle.checked = true;
     }
 
     if (gridDivisionsSelect) {
@@ -602,6 +624,11 @@
         }
         prevPageBtn.disabled = true;
         nextPageBtn.disabled = allPagesData.length <= 1;
+
+        // 🔥 ACTIVAR LA CUADRÍCULA POR DEFECTO
+        if (gridToggle) gridToggle.checked = true;
+        updateGrid();
+
         window.showNotification(`PDF cargado. ${allPagesData.length} páginas listas.`);
     };
 
