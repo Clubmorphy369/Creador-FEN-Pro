@@ -375,6 +375,7 @@ def upload_files():
                 if not valid_pages:
                     return jsonify({'error': f'No hay páginas válidas (PDF tiene {total_pages} páginas)'}), 400
 
+                # Convertir páginas seleccionadas a imágenes
                 for page_num in valid_pages:
                     try:
                         img = convert_from_bytes(file_bytes, dpi=150, first_page=page_num, last_page=page_num)[0]
@@ -382,15 +383,35 @@ def upload_files():
                         img.save(img_bytes, format='JPEG', quality=75)
                         img_bytes.seek(0)
 
-                        page_key = str(page_num - 1)
-                        if page_patterns and page_key in page_patterns:
-                            img_np = cv2.imdecode(np.frombuffer(img_bytes.getvalue(), np.uint8), cv2.IMREAD_COLOR)
-                            board_images = apply_crop_pattern_to_page(img_np, page_patterns[page_key])
-                        else:
-                            board_images = split_grid(img_np, rows=3, cols=2, margin=10) if img_np is not None else []
+                        # Convertir bytes a imagen OpenCV
+                        img_np = cv2.imdecode(np.frombuffer(img_bytes.getvalue(), np.uint8), cv2.IMREAD_COLOR)
+                        if img_np is None:
+                            results.append({
+                                'original_filename': original_filename,
+                                'file': filename,
+                                'page': page_num,
+                                'error': 'No se pudo decodificar la página'
+                            })
+                            continue
 
+                        # Aplicar patrones si existen
+                        page_key = str(page_num - 1)
+                        if page_patterns and page_key in page_patterns and page_patterns[page_key]:
+                            board_images = apply_crop_pattern_to_page(img_np, page_patterns[page_key])
+                            if not board_images:
+                                # Si no hay recortes con el patrón, usar detección automática
+                                board_images = split_grid(img_np, rows=3, cols=2, margin=10)
+                        else:
+                            # Detección automática de tableros (cuadrícula 3x2)
+                            board_images = split_grid(img_np, rows=3, cols=2, margin=10)
+
+                        # Si no se detectaron tableros, usar la imagen completa
+                        if not board_images:
+                            board_images = [img_np]
+
+                        # Procesar cada recorte
                         for board_idx, board_img in enumerate(board_images):
-                            if board_img is None:
+                            if board_img is None or board_img.size == 0:
                                 continue
                             _, board_bytes_cv = cv2.imencode('.jpg', board_img)
                             board_bytes_cv = board_bytes_cv.tobytes()
@@ -403,6 +424,7 @@ def upload_files():
                                     'board': board_idx + 1,
                                     'fen': fen,
                                     'thumbnail': thumbnail,
+                                    'cropDataURL': f"data:image/jpeg;base64,{base64.b64encode(board_bytes_cv).decode('utf-8')}",
                                     'error': None
                                 })
                             else:
@@ -413,31 +435,68 @@ def upload_files():
                                     'board': board_idx + 1,
                                     'fen': None,
                                     'thumbnail': thumbnail if thumbnail else None,
+                                    'cropDataURL': f"data:image/jpeg;base64,{base64.b64encode(board_bytes_cv).decode('utf-8')}",
                                     'error': error or 'No se pudo obtener FEN'
                                 })
                     except Exception as e:
                         print(f"[ERROR] Página {page_num}: {traceback.format_exc()}")
-                        results.append({'original_filename': original_filename, 'file': filename, 'page': page_num, 'error': f'Error en página {page_num}: {str(e)[:80]}'})
+                        results.append({
+                            'original_filename': original_filename,
+                            'file': filename,
+                            'page': page_num,
+                            'error': f'Error en página {page_num}: {str(e)[:80]}'
+                        })
             elif ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp']:
-                thumbnail, fen, error = process_image_to_fen_and_thumbnail(file_bytes)
-                if fen and thumbnail:
+                try:
+                    # Detectar tablero en la imagen
+                    nparr = np.frombuffer(file_bytes, np.uint8)
+                    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        results.append({
+                            'original_filename': original_filename,
+                            'file': filename,
+                            'error': 'No se pudo decodificar la imagen'
+                        })
+                        continue
+
+                    board_img = detect_board(img)
+                    if board_img is None or board_img.size == 0:
+                        board_img = img
+
+                    _, board_bytes_cv = cv2.imencode('.jpg', board_img)
+                    board_bytes_cv = board_bytes_cv.tobytes()
+                    thumbnail, fen, error = process_image_to_fen_and_thumbnail(board_bytes_cv)
+                    if fen and thumbnail:
+                        results.append({
+                            'original_filename': original_filename,
+                            'file': filename,
+                            'fen': fen,
+                            'thumbnail': thumbnail,
+                            'cropDataURL': f"data:image/jpeg;base64,{base64.b64encode(board_bytes_cv).decode('utf-8')}",
+                            'error': None
+                        })
+                    else:
+                        results.append({
+                            'original_filename': original_filename,
+                            'file': filename,
+                            'fen': None,
+                            'thumbnail': thumbnail if thumbnail else None,
+                            'cropDataURL': f"data:image/jpeg;base64,{base64.b64encode(board_bytes_cv).decode('utf-8')}",
+                            'error': error or 'No se pudo obtener FEN'
+                        })
+                except Exception as e:
+                    print(f"[ERROR] Imagen {filename}: {traceback.format_exc()}")
                     results.append({
                         'original_filename': original_filename,
                         'file': filename,
-                        'fen': fen,
-                        'thumbnail': thumbnail,
-                        'error': None
-                    })
-                else:
-                    results.append({
-                        'original_filename': original_filename,
-                        'file': filename,
-                        'fen': None,
-                        'thumbnail': thumbnail if thumbnail else None,
-                        'error': error or 'No se pudo obtener FEN'
+                        'error': f'Error: {str(e)[:80]}'
                     })
             else:
-                results.append({'original_filename': original_filename, 'file': filename, 'error': 'Formato no soportado'})
+                results.append({
+                    'original_filename': original_filename,
+                    'file': filename,
+                    'error': 'Formato no soportado'
+                })
 
         shutil.rmtree(app.config['UPLOAD_FOLDER'], ignore_errors=True)
         app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
