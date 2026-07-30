@@ -232,8 +232,8 @@
                 // Cambiar a pestaña de recorte manual
                 document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
                 // Cargar la imagen en el editor
-                if (typeof window.loadImageForCrop === 'function') {
-                    window.loadImageForCrop(item.cropDataURL, item.original_filename || 'Recorte');
+                if (typeof window._loadCropImage === 'function') {
+                    window._loadCropImage(item.cropDataURL, item.original_filename || 'Recorte');
                 } else {
                     window.showNotification('Editor de recorte no disponible.', true);
                 }
@@ -309,27 +309,48 @@
     }
 
     // ============================================================
-    //  BOTÓN: PROCESAR ARCHIVOS
+    //  BOTÓN: PROCESAR ARCHIVOS (con patrones del editor auto)
     // ============================================================
-    autoProcessBtn.addEventListener('click', async function() {
+    // Guardamos el botón original para reemplazarlo
+    const oldAutoProcessBtn = autoProcessBtn;
+    const newAutoProcessBtn = oldAutoProcessBtn.cloneNode(true);
+    oldAutoProcessBtn.parentNode.replaceChild(newAutoProcessBtn, oldAutoProcessBtn);
+
+    // Actualizar referencia
+    const autoProcessBtnRef = newAutoProcessBtn;
+
+    autoProcessBtnRef.addEventListener('click', async function() {
         const files = autoFileInput.files;
         if (!files.length) {
             window.showNotification('Selecciona al menos un archivo.', true);
             return;
         }
+        // Verificar si hay patrones guardados en el editor auto
+        const patterns = window.autoPagePatterns || {};
+        const hasPatterns = Object.values(patterns).some(arr => arr && arr.length > 0);
+
         const formData = new FormData();
         for (const f of files) formData.append('files', f);
         formData.append('pages', autoPages.value);
 
+        // Si hay patrones, los enviamos al backend
+        if (hasPatterns) {
+            const patternsToSend = {};
+            for (const key in patterns) {
+                patternsToSend[key] = patterns[key];
+            }
+            formData.append('page_patterns', JSON.stringify(patternsToSend));
+        }
+
         autoStatus.textContent = 'Procesando archivos...';
-        autoProcessBtn.disabled = true;
+        autoProcessBtnRef.disabled = true;
 
         try {
             const resp = await fetch('/upload', { method: 'POST', body: formData });
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Error en el servidor');
             const newResults = data.results || [];
-            // Añadir cropDataURL si no viene (para compatibilidad)
+            // Añadir cropDataURL si no viene
             newResults.forEach(item => {
                 if (!item.cropDataURL) {
                     item.cropDataURL = item.thumbnail ? `data:image/jpeg;base64,${item.thumbnail}` : null;
@@ -341,7 +362,7 @@
             window.showNotification('Error: ' + e.message, true);
             autoStatus.textContent = 'Error';
         } finally {
-            autoProcessBtn.disabled = false;
+            autoProcessBtnRef.disabled = false;
         }
     });
 
@@ -413,7 +434,7 @@
     });
 
     // ============================================================
-    //  BOTÓN: CONFIGURAR RECORTES PARA PDF
+    //  BOTÓN: CONFIGURAR RECORTES PARA PDF (usando editor auto)
     // ============================================================
     configPdfCropBtn.addEventListener('click', async function() {
         const files = autoFileInput.files;
@@ -429,10 +450,9 @@
             const resp = await fetch('/extract-pdf-pages', { method: 'POST', body: formData });
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Error al extraer páginas');
-            if (typeof window.loadPdfForCrop === 'function') {
-                window.loadPdfForCrop(data.pages);
-                document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
-                window.showNotification(`PDF cargado. Páginas: ${data.pages.length}.`);
+            if (typeof window.loadAutoPdfForCrop === 'function') {
+                window.loadAutoPdfForCrop(data.pages);
+                window.showNotification(`PDF cargado en el editor. Páginas: ${data.pages.length}.`);
             } else {
                 window.showNotification('Editor de recorte no disponible.', true);
             }
@@ -507,26 +527,9 @@
     }
 
     // ============================================================
-    //  FUNCIÓN PARA CARGAR RECORTE DESDE AUTO (editar)
-    // ============================================================
-    window.loadImageForCrop = function(dataUrl, name) {
-        if (!dataUrl) {
-            window.showNotification('No hay imagen para cargar.', true);
-            return;
-        }
-        // Cambiar a pestaña de recorte manual
-        document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
-        // La función loadImageForCrop en crop-editor.js se encargará de cargarla
-        if (typeof window._loadCropImage === 'function') {
-            window._loadCropImage(dataUrl, name || 'Recorte');
-        } else {
-            window.showNotification('Función de carga no disponible.', true);
-        }
-    };
-
-    // ============================================================
     //  INICIALIZAR
     // ============================================================
     renderAutoResults();
     updateUndoRedoButtons();
+
 })();
