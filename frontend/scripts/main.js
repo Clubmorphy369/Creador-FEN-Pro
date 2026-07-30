@@ -1,5 +1,5 @@
 // ============================================================
-//  MÓDULO PRINCIPAL: Extracción automática y gestión de resultados
+//  MÓDULO PRINCIPAL: Extracción automática (con todas las funcionalidades)
 // ============================================================
 
 (function() {
@@ -15,7 +15,7 @@
         el.className = 'notification' + (isError ? ' error' : '');
         el.classList.add('show');
         clearTimeout(el._timeout);
-        el._timeout = setTimeout(() => el.classList.remove('show'), 3000);
+        el._timeout = setTimeout(() => el.classList.remove('show'), 4000);
     };
 
     // ============================================================
@@ -45,12 +45,16 @@
     const processGalleryBtn = document.getElementById('processGalleryBtn');
     const clearAutoResultsBtn = document.getElementById('clearAutoResultsBtn');
     const configPdfCropBtn = document.getElementById('configPdfCropBtn');
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
 
     // ============================================================
     //  ESTADO
     // ============================================================
     let autoData = [];
     let autoFens = new Set();
+    let undoStack = [];
+    let redoStack = [];
 
     // ============================================================
     //  FUNCIONES DE UTILIDAD
@@ -71,6 +75,11 @@
             return parts.join(' ');
         }
         return fen;
+    }
+
+    function updateUndoRedoButtons() {
+        if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+        if (redoBtn) redoBtn.disabled = redoStack.length === 0;
     }
 
     // ============================================================
@@ -98,11 +107,16 @@
     //  RENDERIZAR TABLA DE RESULTADOS
     // ============================================================
     function renderAutoResults() {
+        const container = document.getElementById('resultContainer');
+        if (!container) return;
+        
         if (!autoData || autoData.length === 0) {
             autoResults.innerHTML = '<p>No hay resultados. Sube imágenes o procesa recortes desde la galería.</p>';
-            updateExportButtonState();
+            container.classList.add('hidden');
+            updateUndoRedoButtons();
             return;
         }
+        container.classList.remove('hidden');
 
         let html = `<table>
             <thead><tr>
@@ -111,7 +125,7 @@
                 <th>FEN</th>
                 <th>Miniatura</th>
                 <th style="width:40px;">Turno</th>
-                <th style="width:40px;">Acción</th>
+                <th style="width:40px;">Acciones</th>
             </tr></thead><tbody>`;
 
         for (let i = 0; i < autoData.length; i++) {
@@ -120,15 +134,20 @@
             const isError = !item.fen;
             const thumb = item.thumbnail ? `<img src="data:image/jpeg;base64,${item.thumbnail}" class="thumbnail-img">` : '-';
             html += `<tr id="auto-row-${i}" data-index="${i}">
-                <td>${item.original_filename || item.file}</td>
+                <td>${item.original_filename || item.file || 'Recorte'}</td>
                 <td>${item.page || '-'}</td>
                 <td class="${isError ? 'error' : 'success'} fen-cell" id="fen-cell-${i}">${fen}</td>
                 <td>${thumb}</td>
                 <td style="text-align:center;">
                     ${!isError ? `<button class="btn-toggle-turn" data-index="${i}" data-fen="${fen}" title="Alternar turno" style="background:transparent; border:none; cursor:pointer; font-size:1.1rem;">🔄</button>` : '-'}
                 </td>
-                <td style="text-align:center;">
-                    ${!isError ? `<button class="btn-copy-fen" data-fen="${fen}" data-index="${i}" title="Copiar y eliminar" style="background:transparent; border:none; cursor:pointer; font-size:1.2rem;">✂️</button>` : '-'}
+                <td style="text-align:center; white-space:nowrap;">
+                    ${!isError ? `
+                        <button class="btn-copy-fen" data-fen="${fen}" data-index="${i}" title="Copiar FEN" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">📋</button>
+                        <button class="btn-cut-fen" data-index="${i}" title="Cortar (eliminar con deshacer)" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">✂️</button>
+                        <button class="btn-view-crop" data-index="${i}" title="Ver recorte enviado" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">🔍</button>
+                        <button class="btn-edit-crop" data-index="${i}" title="Editar en recorte manual" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">✏️</button>
+                    ` : ''}
                 </td>
             </tr>`;
         }
@@ -146,36 +165,143 @@
                 autoData[index].fen = newFen;
                 document.getElementById(`fen-cell-${index}`).textContent = newFen;
                 this.setAttribute('data-fen', newFen);
-                const copyBtn = document.querySelector(`.btn-copy-fen[data-index="${index}"]`);
-                if (copyBtn) copyBtn.setAttribute('data-fen', newFen);
                 if (currentFen) autoFens.delete(currentFen);
                 autoFens.add(newFen);
                 window.showNotification('Turno: ' + (newFen.includes(' w ') ? 'Blancas' : 'Negras'));
             });
         });
 
-        // Eventos: copiar y eliminar
+        // Eventos: copiar
         document.querySelectorAll('.btn-copy-fen').forEach(btn => {
             btn.addEventListener('click', function() {
                 const fen = this.getAttribute('data-fen');
-                const index = parseInt(this.getAttribute('data-index'));
-                if (!fen || isNaN(index)) return;
-                navigator.clipboard.writeText(fen).then(() => {
-                    if (autoData[index]?.fen) autoFens.delete(autoData[index].fen);
-                    autoData.splice(index, 1);
-                    renderAutoResults();
-                    updateExportButtonState();
-                    window.showNotification('FEN copiado y eliminado');
-                }).catch(err => { window.showNotification('Error: ' + err.message, true); });
+                if (fen) {
+                    navigator.clipboard.writeText(fen).then(() => {
+                        window.showNotification('FEN copiado al portapapeles');
+                    });
+                }
             });
         });
 
+        // Eventos: cortar (eliminar con deshacer)
+        document.querySelectorAll('.btn-cut-fen').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const index = parseInt(this.getAttribute('data-index'));
+                if (isNaN(index)) return;
+                deleteResult(index);
+            });
+        });
+
+        // Eventos: ver recorte (abrir modal)
+        document.querySelectorAll('.btn-view-crop').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const index = parseInt(this.getAttribute('data-index'));
+                if (isNaN(index)) return;
+                const item = autoData[index];
+                if (!item || !item.cropDataURL) {
+                    window.showNotification('No hay imagen de recorte disponible.', true);
+                    return;
+                }
+                // Abrir modal
+                const modal = document.getElementById('cropModal');
+                const modalImage = document.getElementById('modalImage');
+                const modalPage = document.getElementById('modalPage');
+                const modalBoard = document.getElementById('modalBoard');
+                const modalError = document.getElementById('modalError');
+                if (modal) {
+                    modalImage.src = item.cropDataURL;
+                    modalPage.textContent = item.page || '-';
+                    modalBoard.textContent = (item.board || '1');
+                    modalError.textContent = item.error ? '❌ ' + item.error : '✅ FEN obtenido';
+                    modalError.style.color = item.error ? '#e74c3c' : '#27ae60';
+                    modal.classList.add('active');
+                }
+            });
+        });
+
+        // Eventos: editar (abrir pestaña de recorte manual)
+        document.querySelectorAll('.btn-edit-crop').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const index = parseInt(this.getAttribute('data-index'));
+                if (isNaN(index)) return;
+                const item = autoData[index];
+                if (!item || !item.cropDataURL) {
+                    window.showNotification('No hay imagen de recorte para editar.', true);
+                    return;
+                }
+                // Cambiar a pestaña de recorte manual
+                document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
+                // Cargar la imagen en el editor
+                if (typeof window.loadImageForCrop === 'function') {
+                    window.loadImageForCrop(item.cropDataURL, item.original_filename || 'Recorte');
+                } else {
+                    window.showNotification('Editor de recorte no disponible.', true);
+                }
+            });
+        });
+
+        updateUndoRedoButtons();
         updateExportButtonState();
+        const countSpan = document.getElementById('resultCount');
+        if (countSpan) countSpan.textContent = autoData.length;
     }
 
+    // ============================================================
+    //  ELIMINAR FILA CON HISTORIAL (DESHACER/REHACER)
+    // ============================================================
+    function deleteResult(index) {
+        if (index < 0 || index >= autoData.length) return;
+        const deleted = autoData[index];
+        undoStack.push({ type: 'delete', data: deleted, index: index });
+        redoStack = [];
+        autoData.splice(index, 1);
+        renderAutoResults();
+        updateUndoRedoButtons();
+        window.showNotification('Fila eliminada');
+    }
+
+    // ============================================================
+    //  DESHACER
+    // ============================================================
+    if (undoBtn) {
+        undoBtn.addEventListener('click', function() {
+            if (undoStack.length === 0) return;
+            const action = undoStack.pop();
+            autoData.splice(action.index, 0, action.data);
+            redoStack.push(action);
+            renderAutoResults();
+            updateUndoRedoButtons();
+            window.showNotification('Deshecho');
+        });
+    }
+
+    // ============================================================
+    //  REHACER
+    // ============================================================
+    if (redoBtn) {
+        redoBtn.addEventListener('click', function() {
+            if (redoStack.length === 0) return;
+            const action = redoStack.pop();
+            const idx = autoData.indexOf(action.data);
+            if (idx !== -1) {
+                autoData.splice(idx, 1);
+                undoStack.push(action);
+                renderAutoResults();
+                updateUndoRedoButtons();
+                window.showNotification('Rehecho');
+            } else {
+                redoStack = [];
+                updateUndoRedoButtons();
+            }
+        });
+    }
+
+    // ============================================================
+    //  EXPORTAR PGN
+    // ============================================================
     function updateExportButtonState() {
         const hasFens = autoData.some(item => item.fen);
-        autoExportPgnBtn.disabled = !hasFens;
+        if (autoExportPgnBtn) autoExportPgnBtn.disabled = !hasFens;
     }
 
     function getFensForExport() {
@@ -203,6 +329,12 @@
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Error en el servidor');
             const newResults = data.results || [];
+            // Añadir cropDataURL si no viene (para compatibilidad)
+            newResults.forEach(item => {
+                if (!item.cropDataURL) {
+                    item.cropDataURL = item.thumbnail ? `data:image/jpeg;base64,${item.thumbnail}` : null;
+                }
+            });
             const added = addResultsToAutoData(newResults);
             autoStatus.textContent = `Se añadieron ${added} nuevos elementos. Total: ${autoData.length} elementos.`;
         } catch (e) {
@@ -248,13 +380,31 @@
                         file: `recorte_${i+1}`,
                         fen: fen,
                         thumbnail: data.thumbnail,
-                        error: null
+                        cropDataURL: board.dataUrl,
+                        error: null,
+                        page: '-'
                     });
                 } else {
-                    newResults.push({ original_filename: `Recorte ${i+1}`, file: `recorte_${i+1}`, fen: null, thumbnail: null, error: data.error || 'Error' });
+                    newResults.push({
+                        original_filename: `Recorte ${i+1}`,
+                        file: `recorte_${i+1}`,
+                        fen: null,
+                        thumbnail: null,
+                        cropDataURL: board.dataUrl,
+                        error: data.error || 'Error',
+                        page: '-'
+                    });
                 }
             } catch (e) {
-                newResults.push({ original_filename: `Recorte ${i+1}`, file: `recorte_${i+1}`, fen: null, thumbnail: null, error: 'Error de red' });
+                newResults.push({
+                    original_filename: `Recorte ${i+1}`,
+                    file: `recorte_${i+1}`,
+                    fen: null,
+                    thumbnail: null,
+                    cropDataURL: board.dataUrl,
+                    error: 'Error de red',
+                    page: '-'
+                });
             }
         }
         const added = addResultsToAutoData(newResults);
@@ -294,36 +444,40 @@
     // ============================================================
     //  BOTÓN: LIMPIAR RESULTADOS
     // ============================================================
-    clearAutoResultsBtn.addEventListener('click', function() {
-        if (confirm('¿Eliminar todos los resultados?')) {
-            window.clearAutoData();
-            window.showNotification('Resultados eliminados');
-        }
-    });
+    if (clearAutoResultsBtn) {
+        clearAutoResultsBtn.addEventListener('click', function() {
+            if (confirm('¿Eliminar todos los resultados?')) {
+                window.clearAutoData();
+                window.showNotification('Resultados eliminados');
+            }
+        });
+    }
 
     // ============================================================
     //  BOTÓN: EXPORTAR PGN
     // ============================================================
-    autoExportPgnBtn.addEventListener('click', async function() {
-        const fens = getFensForExport();
-        if (!fens.length) { window.showNotification('No hay FEN para exportar.', true); return; }
-        const studyName = prompt('Nombre del estudio:', 'Mi Estudio') || 'Mi Estudio';
-        const user = prompt('Usuario de Lichess:', 'Anónimo') || 'Anónimo';
-        try {
-            const resp = await fetch('/export-pgn', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fens, study_name: studyName, user })
-            });
-            if (!resp.ok) throw new Error('Error al exportar');
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'fen_study.pgn'; a.click();
-            URL.revokeObjectURL(url);
-            window.showNotification('PGN descargado');
-        } catch (e) { window.showNotification('Error: ' + e.message, true); }
-    });
+    if (autoExportPgnBtn) {
+        autoExportPgnBtn.addEventListener('click', async function() {
+            const fens = getFensForExport();
+            if (!fens.length) { window.showNotification('No hay FEN para exportar.', true); return; }
+            const studyName = prompt('Nombre del estudio:', 'Mi Estudio') || 'Mi Estudio';
+            const user = prompt('Usuario de Lichess:', 'Anónimo') || 'Anónimo';
+            try {
+                const resp = await fetch('/export-pgn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fens, study_name: studyName, user })
+                });
+                if (!resp.ok) throw new Error('Error al exportar');
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = 'fen_study.pgn'; a.click();
+                URL.revokeObjectURL(url);
+                window.showNotification('PGN descargado');
+            } catch (e) { window.showNotification('Error: ' + e.message, true); }
+        });
+    }
 
     // ============================================================
     //  EXPORTAR FUNCIONES GLOBALES
@@ -333,12 +487,46 @@
     window.clearAutoData = () => {
         autoData = [];
         autoFens = new Set();
+        undoStack = [];
+        redoStack = [];
         renderAutoResults();
+        updateUndoRedoButtons();
         updateExportButtonState();
+    };
+
+    // ============================================================
+    //  MODAL (para ver recorte)
+    // ============================================================
+    const modal = document.getElementById('cropModal');
+    const modalClose = document.getElementById('modalClose');
+    if (modalClose) {
+        modalClose.addEventListener('click', () => modal.classList.remove('active'));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.classList.remove('active');
+        });
+    }
+
+    // ============================================================
+    //  FUNCIÓN PARA CARGAR RECORTE DESDE AUTO (editar)
+    // ============================================================
+    window.loadImageForCrop = function(dataUrl, name) {
+        if (!dataUrl) {
+            window.showNotification('No hay imagen para cargar.', true);
+            return;
+        }
+        // Cambiar a pestaña de recorte manual
+        document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
+        // La función loadImageForCrop en crop-editor.js se encargará de cargarla
+        if (typeof window._loadCropImage === 'function') {
+            window._loadCropImage(dataUrl, name || 'Recorte');
+        } else {
+            window.showNotification('Función de carga no disponible.', true);
+        }
     };
 
     // ============================================================
     //  INICIALIZAR
     // ============================================================
     renderAutoResults();
+    updateUndoRedoButtons();
 })();
