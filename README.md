@@ -1,4 +1,4 @@
-# ♟️ ChessSuite - Herramienta todo en uno para ajedrez
+# ♟️ Creador FEN Pro - ChessSuite
 
 ## 🚀 Funcionalidades
 
@@ -18,5 +18,5 @@
 
 1. Clona el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/chess-suite.git
-   cd chess-suite
+   git clone https://github.com/Clubmorphy369/Creador-FEN-Pro.git
+   cd Creador-FEN-Pro
