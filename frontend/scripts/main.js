@@ -104,7 +104,7 @@
     }
 
     // ============================================================
-    //  RENDERIZAR TABLA DE RESULTADOS
+    //  RENDERIZAR TABLA DE RESULTADOS (CON MINIATURA MEJORADA)
     // ============================================================
     function renderAutoResults() {
         const container = document.getElementById('resultContainer');
@@ -123,7 +123,7 @@
                 <th>Archivo</th>
                 <th>Página</th>
                 <th>FEN</th>
-                <th>Miniatura</th>
+                <th>Vista previa</th>
                 <th style="width:40px;">Turno</th>
                 <th style="width:40px;">Acciones</th>
             </tr></thead><tbody>`;
@@ -132,12 +132,20 @@
             const item = autoData[i];
             const fen = item.fen || 'Error';
             const isError = !item.fen;
-            const thumb = item.thumbnail ? `<img src="data:image/jpeg;base64,${item.thumbnail}" class="thumbnail-img">` : '-';
+            
+            // 🔥 MEJORA: Si no hay miniatura, usar la imagen recortada (cropDataURL)
+            let thumbHtml = '-';
+            if (item.thumbnail) {
+                thumbHtml = `<img src="data:image/jpeg;base64,${item.thumbnail}" class="thumbnail-img">`;
+            } else if (item.cropDataURL) {
+                thumbHtml = `<img src="${item.cropDataURL}" class="thumbnail-img">`;
+            }
+            
             html += `<tr id="auto-row-${i}" data-index="${i}">
                 <td>${item.original_filename || item.file || 'Recorte'}</td>
                 <td>${item.page || '-'}</td>
                 <td class="${isError ? 'error' : 'success'} fen-cell" id="fen-cell-${i}">${fen}</td>
-                <td>${thumb}</td>
+                <td>${thumbHtml}</td>
                 <td style="text-align:center;">
                     ${!isError ? `<button class="btn-toggle-turn" data-index="${i}" data-fen="${fen}" title="Alternar turno" style="background:transparent; border:none; cursor:pointer; font-size:1.1rem;">🔄</button>` : '-'}
                 </td>
