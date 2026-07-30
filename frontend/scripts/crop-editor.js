@@ -445,7 +445,6 @@
             newY = Math.max(0, Math.min(cropOriginalHeight - obj.h, newY));
             obj.x = Math.round(newX);
             obj.y = Math.round(newY);
-            // No aplicamos snap en táctil por defecto (más natural)
         } else if (isResizing) {
             let newW = startBoxW, newH = startBoxH, newX = startBoxX, newY = startBoxY;
             if (resizeDir.includes('e')) newW = Math.max(10, startBoxW + dx);
@@ -817,5 +816,44 @@
         updateGrid();
     }
     initCropEditor();
+
+    // ============================================================
+    //  FUNCIÓN PARA CARGAR IMAGEN DESDE AUTO (editar)
+    // ============================================================
+    window._loadCropImage = function(dataUrl, name) {
+        if (!dataUrl) {
+            window.showNotification('No hay imagen para cargar.', true);
+            return;
+        }
+        // Cargar la imagen en el editor
+        cropImages = [];
+        // Crear un objeto File simulado para mantener la estructura
+        const blob = dataURLToBlob(dataUrl);
+        const file = new File([blob], name || 'recorte.jpg', { type: 'image/jpeg' });
+        cropImages = [file];
+        cropIndex = 0;
+        pdfPages = [];
+        pagePatterns = {};
+        cropEditor.style.display = 'block';
+        if (pdfControls) pdfControls.style.display = 'none';
+        cropSaveBtn.style.display = 'inline-flex';
+        // Limpiar recuadros anteriores
+        clearCropBoxes();
+        loadCropImage();
+        window.showNotification('Imagen cargada en el editor. Ajusta el recuadro y guarda.');
+    };
+
+    // Función auxiliar para convertir dataURL a Blob
+    function dataURLToBlob(dataUrl) {
+        const parts = dataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)[1];
+        const bstr = atob(parts[1]);
+        const n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+            u8arr[i] = bstr.charCodeAt(i);
+        }
+        return new Blob([u8arr], { type: mime });
+    }
 
 })();
