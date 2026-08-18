@@ -103,6 +103,12 @@
             <input type="file" id="cropFileInput" accept="image/*" multiple>
             <button id="cropLoadBtn" class="btn"><i class="fas fa-images"></i> Cargar imágenes</button>
             <div id="cropCounter" style="margin-top:8px; font-weight:500;"></div>
+            <!-- Botón para invertir orden -->
+            <div style="display: flex; gap: 10px; justify-content: center; margin: 8px 0;">
+                <button id="reverseCropOrderBtn" class="btn btn-warning btn-sm">
+                    <i class="fas fa-sort-amount-down"></i> Invertir orden
+                </button>
+            </div>
         </div>
 
         <div id="cropEditor" class="card" style="display:none;">
@@ -192,5 +198,15 @@
 <script src="/scripts/crop-editor.js"></script>
 <script src="/scripts/auto-crop-editor.js"></script>
 <script src="/scripts/pdf-generator.js"></script>
+
+<!-- ========== SCRIPT PARA ASOCIAR EL BOTÓN ========== -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const reverseBtn = document.getElementById('reverseCropOrderBtn');
+        if (reverseBtn && typeof window.invertirOrdenCrop === 'function') {
+            reverseBtn.addEventListener('click', window.invertirOrdenCrop);
+        }
+    });
+</script>
 </body>
 </html>
