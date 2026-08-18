@@ -39,29 +39,36 @@ def clean_fen(raw_fen):
     return None
 
 # ============================================================
-# DETECCIÓN DE TABLEROS (métodos combinados)
+# DETECCIÓN DE TABLEROS (MÉTODOS COMBINADOS + WARP)
 # ============================================================
 
-def detect_board_chessboard(image):
-    try:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        ret, corners = cv2.findChessboardCorners(gray, (8, 8), None)
-        if ret:
-            corners = corners.reshape(-1, 2)
-            x_min = int(np.min(corners[:, 0]))
-            x_max = int(np.max(corners[:, 0]))
-            y_min = int(np.min(corners[:, 1]))
-            y_max = int(np.max(corners[:, 1]))
-            margin = 15
-            h, w = image.shape[:2]
-            x1 = max(0, x_min - margin)
-            y1 = max(0, y_min - margin)
-            x2 = min(w, x_max + margin)
-            y2 = min(h, y_max + margin)
-            return image[y1:y2, x1:x2]
-    except Exception:
-        pass
-    return None
+def _warp_board(image, corners):
+    """
+    Aplica transformación de perspectiva para enderezar el tablero.
+    corners: array de (7x7) esquinas internas.
+    """
+    # Esquinas externas del tablero (orden: TL, TR, BL, BR)
+    # corners tiene forma (49, 1, 2) con índices:
+    # TL = corners[0], TR = corners[6], BL = corners[42], BR = corners[48]
+    src_pts = np.float32([
+        corners[0][0],      # TL
+        corners[6][0],      # TR
+        corners[42][0],     # BL
+        corners[48][0]      # BR
+    ])
+    
+    # Tamaño deseado del tablero (600x600 píxeles)
+    board_size = 600
+    dst_pts = np.float32([
+        [0, 0],
+        [board_size, 0],
+        [0, board_size],
+        [board_size, board_size]
+    ])
+    
+    H, _ = cv2.findHomography(src_pts, dst_pts)
+    warped = cv2.warpPerspective(image, H, (board_size, board_size))
+    return warped
 
 def detect_board_contours(image):
     try:
@@ -182,19 +189,45 @@ def detect_board_by_lines(image):
     return None
 
 def detect_board(image):
-    methods = [
-        ("líneas", detect_board_by_lines),
-        ("contornos", detect_board_contours),
-        ("color", detect_board_by_color),
-        ("chessboard", detect_board_chessboard)
-    ]
-    for name, method in methods:
-        board = method(image)
-        if board is not None:
-            print(f"[INFO] Tablero detectado por {name}")
-            return board
-    # Fallback: recorte central (90%)
+    """
+    Detecta el tablero de ajedrez en la imagen y devuelve una versión
+    recortada y enderezada (vista ortogonal) para máxima precisión.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     h, w = image.shape[:2]
+
+    # --- Intento 1: findChessboardCorners (clásico) ---
+    ret, corners = cv2.findChessboardCorners(
+        gray, (7, 7),
+        cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+    )
+    if ret:
+        return _warp_board(image, corners)
+
+    # --- Intento 2: findChessboardCornersSB (más tolerante) ---
+    ret, corners = cv2.findChessboardCornersSB(
+        gray, (7, 7),
+        cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+    )
+    if ret:
+        return _warp_board(image, corners)
+
+    # --- Intento 3: contornos ---
+    board = detect_board_contours(image)
+    if board is not None:
+        return board
+
+    # --- Intento 4: color ---
+    board = detect_board_by_color(image)
+    if board is not None:
+        return board
+
+    # --- Intento 5: líneas ---
+    board = detect_board_by_lines(image)
+    if board is not None:
+        return board
+
+    # --- Fallback: recorte central (90%) ---
     size = min(h, w)
     crop_size = int(size * 0.90)
     center_x = w // 2
@@ -334,7 +367,6 @@ def upload_files():
         if not files:
             return jsonify({'error': 'No se seleccionaron archivos'}), 400
 
-        # Obtener page_patterns (desde JSON o form-data)
         page_patterns = {}
         if request.is_json:
             page_patterns = request.json.get('page_patterns', {})
@@ -375,7 +407,6 @@ def upload_files():
                 if not valid_pages:
                     return jsonify({'error': f'No hay páginas válidas (PDF tiene {total_pages} páginas)'}), 400
 
-                # Convertir páginas seleccionadas a imágenes
                 for page_num in valid_pages:
                     try:
                         img = convert_from_bytes(file_bytes, dpi=150, first_page=page_num, last_page=page_num)[0]
@@ -383,7 +414,6 @@ def upload_files():
                         img.save(img_bytes, format='JPEG', quality=75)
                         img_bytes.seek(0)
 
-                        # Convertir bytes a imagen OpenCV
                         img_np = cv2.imdecode(np.frombuffer(img_bytes.getvalue(), np.uint8), cv2.IMREAD_COLOR)
                         if img_np is None:
                             results.append({
@@ -394,22 +424,17 @@ def upload_files():
                             })
                             continue
 
-                        # Aplicar patrones si existen
                         page_key = str(page_num - 1)
                         if page_patterns and page_key in page_patterns and page_patterns[page_key]:
                             board_images = apply_crop_pattern_to_page(img_np, page_patterns[page_key])
                             if not board_images:
-                                # Si no hay recortes con el patrón, usar detección automática
                                 board_images = split_grid(img_np, rows=3, cols=2, margin=10)
                         else:
-                            # Detección automática de tableros (cuadrícula 3x2)
                             board_images = split_grid(img_np, rows=3, cols=2, margin=10)
 
-                        # Si no se detectaron tableros, usar la imagen completa
                         if not board_images:
                             board_images = [img_np]
 
-                        # Procesar cada recorte
                         for board_idx, board_img in enumerate(board_images):
                             if board_img is None or board_img.size == 0:
                                 continue
@@ -448,7 +473,6 @@ def upload_files():
                         })
             elif ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp']:
                 try:
-                    # Detectar tablero en la imagen
                     nparr = np.frombuffer(file_bytes, np.uint8)
                     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     if img is None:
@@ -524,6 +548,27 @@ def upload_crop():
         print(f"[ERROR] upload_crop: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/retry', methods=['POST'])
+def retry_image():
+    """Reintenta procesar una única imagen fallida (sin tocar las demás)."""
+    try:
+        data = request.get_json()
+        crop_b64 = data.get('cropDataURL', '')
+        if not crop_b64:
+            return jsonify({'error': 'No se proporcionó imagen'}), 400
+
+        if crop_b64.startswith('data:image'):
+            crop_b64 = crop_b64.split(',')[1]
+        image_bytes = base64.b64decode(crop_b64)
+        thumbnail, fen, error = process_image_to_fen_and_thumbnail(image_bytes)
+
+        if fen:
+            return jsonify({'success': True, 'fen': fen, 'thumbnail': thumbnail})
+        else:
+            return jsonify({'success': False, 'error': error or 'No se pudo obtener FEN'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/export-pgn', methods=['POST'])
 def export_pgn():
     try:
@@ -571,7 +616,6 @@ def export_pgn():
 
 @app.route('/extract-pdf-pages', methods=['POST'])
 def extract_pdf_pages():
-    """Extrae páginas de un PDF y las devuelve como imágenes base64."""
     try:
         file = request.files['file']
         if not file or not file.filename.lower().endswith('.pdf'):
@@ -583,7 +627,6 @@ def extract_pdf_pages():
         if not selected_pages:
             selected_pages = [1]
 
-        # Limitar a 60 páginas por seguridad
         if len(selected_pages) > 60:
             selected_pages = selected_pages[:60]
 
