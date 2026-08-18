@@ -133,7 +133,6 @@
             const fen = item.fen || 'Error';
             const isError = !item.fen;
             
-            // 🔥 MEJORA: Si no hay miniatura, usar la imagen recortada (cropDataURL)
             let thumbHtml = '-';
             if (item.thumbnail) {
                 thumbHtml = `<img src="data:image/jpeg;base64,${item.thumbnail}" class="thumbnail-img">`;
@@ -155,7 +154,10 @@
                         <button class="btn-cut-fen" data-index="${i}" title="Cortar (eliminar con deshacer)" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">✂️</button>
                         <button class="btn-view-crop" data-index="${i}" title="Ver recorte enviado" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">🔍</button>
                         <button class="btn-edit-crop" data-index="${i}" title="Editar en recorte manual" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">✏️</button>
-                    ` : ''}
+                        <button class="btn-retry" data-index="${i}" title="Reintentar (reprocesar esta imagen)" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">↻</button>
+                    ` : `
+                        <button class="btn-retry" data-index="${i}" title="Reintentar (reprocesar esta imagen)" style="background:transparent; border:none; cursor:pointer; font-size:1rem;">↻</button>
+                    `}
                 </td>
             </tr>`;
         }
@@ -163,54 +165,109 @@
         html += '</tbody></table>';
         autoResults.innerHTML = html;
 
-        // Eventos: alternar turno
-        document.querySelectorAll('.btn-toggle-turn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const index = parseInt(this.getAttribute('data-index'));
-                const currentFen = this.getAttribute('data-fen');
+        // --- DELEGACIÓN DE EVENTOS para los botones dinámicos ---
+        autoResults.addEventListener('click', async function(e) {
+            // Botón: Reintentar
+            const retryBtn = e.target.closest('.btn-retry');
+            if (retryBtn) {
+                const index = parseInt(retryBtn.getAttribute('data-index'));
+                if (isNaN(index)) return;
+                const item = autoData[index];
+                if (!item || !item.cropDataURL) {
+                    window.showNotification('No hay imagen para reintentar.', true);
+                    return;
+                }
+                retryBtn.disabled = true;
+                retryBtn.textContent = '⏳';
+                try {
+                    const resp = await fetch('/retry', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cropDataURL: item.cropDataURL })
+                    });
+                    const data = await resp.json();
+                    if (data.success && data.fen) {
+                        // Actualizar el FEN y la miniatura en la fila
+                        const fenCell = document.getElementById(`fen-cell-${index}`);
+                        if (fenCell) {
+                            fenCell.textContent = data.fen;
+                            fenCell.className = 'success fen-cell';
+                        }
+                        // Actualizar el objeto en autoData
+                        autoData[index].fen = data.fen;
+                        if (data.thumbnail) {
+                            autoData[index].thumbnail = data.thumbnail;
+                            // Opcional: refrescar la miniatura, pero no es necesario si se recarga la tabla
+                        }
+                        window.showNotification('FEN actualizado correctamente.');
+                    } else {
+                        window.showNotification('Error: ' + (data.error || 'Falló el reintento'), true);
+                    }
+                } catch (err) {
+                    window.showNotification('Error de red al reintentar.', true);
+                } finally {
+                    retryBtn.disabled = false;
+                    retryBtn.textContent = '↻';
+                }
+                return;
+            }
+
+            // Botón: alternar turno
+            const turnBtn = e.target.closest('.btn-toggle-turn');
+            if (turnBtn) {
+                const index = parseInt(turnBtn.getAttribute('data-index'));
+                const currentFen = turnBtn.getAttribute('data-fen');
                 if (isNaN(index) || !currentFen) return;
                 const newFen = toggleTurn(currentFen);
                 autoData[index].fen = newFen;
                 document.getElementById(`fen-cell-${index}`).textContent = newFen;
-                this.setAttribute('data-fen', newFen);
+                turnBtn.setAttribute('data-fen', newFen);
                 if (currentFen) autoFens.delete(currentFen);
                 autoFens.add(newFen);
                 window.showNotification('Turno: ' + (newFen.includes(' w ') ? 'Blancas' : 'Negras'));
-            });
-        });
+                return;
+            }
 
-        // Eventos: copiar
-        document.querySelectorAll('.btn-copy-fen').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const fen = this.getAttribute('data-fen');
+            // Botón: copiar FEN
+            const copyBtn = e.target.closest('.btn-copy-fen');
+            if (copyBtn) {
+                const fen = copyBtn.getAttribute('data-fen');
                 if (fen) {
                     navigator.clipboard.writeText(fen).then(() => {
                         window.showNotification('FEN copiado al portapapeles');
+                    }).catch(() => {
+                        // Fallback
+                        const ta = document.createElement('textarea');
+                        ta.value = fen;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        ta.remove();
+                        window.showNotification('FEN copiado');
                     });
                 }
-            });
-        });
+                return;
+            }
 
-        // Eventos: cortar (eliminar con deshacer)
-        document.querySelectorAll('.btn-cut-fen').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const index = parseInt(this.getAttribute('data-index'));
+            // Botón: cortar (eliminar con deshacer)
+            const cutBtn = e.target.closest('.btn-cut-fen');
+            if (cutBtn) {
+                const index = parseInt(cutBtn.getAttribute('data-index'));
                 if (isNaN(index)) return;
                 deleteResult(index);
-            });
-        });
+                return;
+            }
 
-        // Eventos: ver recorte (abrir modal)
-        document.querySelectorAll('.btn-view-crop').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const index = parseInt(this.getAttribute('data-index'));
+            // Botón: ver recorte (modal)
+            const viewBtn = e.target.closest('.btn-view-crop');
+            if (viewBtn) {
+                const index = parseInt(viewBtn.getAttribute('data-index'));
                 if (isNaN(index)) return;
                 const item = autoData[index];
                 if (!item || !item.cropDataURL) {
                     window.showNotification('No hay imagen de recorte disponible.', true);
                     return;
                 }
-                // Abrir modal
                 const modal = document.getElementById('cropModal');
                 const modalImage = document.getElementById('modalImage');
                 const modalPage = document.getElementById('modalPage');
@@ -224,30 +281,30 @@
                     modalError.style.color = item.error ? '#e74c3c' : '#27ae60';
                     modal.classList.add('active');
                 }
-            });
-        });
+                return;
+            }
 
-        // Eventos: editar (abrir pestaña de recorte manual)
-        document.querySelectorAll('.btn-edit-crop').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const index = parseInt(this.getAttribute('data-index'));
+            // Botón: editar en recorte manual
+            const editBtn = e.target.closest('.btn-edit-crop');
+            if (editBtn) {
+                const index = parseInt(editBtn.getAttribute('data-index'));
                 if (isNaN(index)) return;
                 const item = autoData[index];
                 if (!item || !item.cropDataURL) {
                     window.showNotification('No hay imagen de recorte para editar.', true);
                     return;
                 }
-                // Cambiar a pestaña de recorte manual
                 document.querySelector('.tab-btn[data-tab="tab-crop"]').click();
-                // Cargar la imagen en el editor
                 if (typeof window._loadCropImage === 'function') {
                     window._loadCropImage(item.cropDataURL, item.original_filename || 'Recorte');
                 } else {
                     window.showNotification('Editor de recorte no disponible.', true);
                 }
-            });
+                return;
+            }
         });
 
+        // Actualizar contador y botones
         updateUndoRedoButtons();
         updateExportButtonState();
         const countSpan = document.getElementById('resultCount');
@@ -319,12 +376,9 @@
     // ============================================================
     //  BOTÓN: PROCESAR ARCHIVOS (con patrones del editor auto)
     // ============================================================
-    // Guardamos el botón original para reemplazarlo
     const oldAutoProcessBtn = autoProcessBtn;
     const newAutoProcessBtn = oldAutoProcessBtn.cloneNode(true);
     oldAutoProcessBtn.parentNode.replaceChild(newAutoProcessBtn, oldAutoProcessBtn);
-
-    // Actualizar referencia
     const autoProcessBtnRef = newAutoProcessBtn;
 
     autoProcessBtnRef.addEventListener('click', async function() {
@@ -333,7 +387,6 @@
             window.showNotification('Selecciona al menos un archivo.', true);
             return;
         }
-        // Verificar si hay patrones guardados en el editor auto
         const patterns = window.autoPagePatterns || {};
         const hasPatterns = Object.values(patterns).some(arr => arr && arr.length > 0);
 
@@ -341,7 +394,6 @@
         for (const f of files) formData.append('files', f);
         formData.append('pages', autoPages.value);
 
-        // Si hay patrones, los enviamos al backend
         if (hasPatterns) {
             const patternsToSend = {};
             for (const key in patterns) {
@@ -358,7 +410,6 @@
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Error en el servidor');
             const newResults = data.results || [];
-            // Añadir cropDataURL si no viene
             newResults.forEach(item => {
                 if (!item.cropDataURL) {
                     item.cropDataURL = item.thumbnail ? `data:image/jpeg;base64,${item.thumbnail}` : null;
