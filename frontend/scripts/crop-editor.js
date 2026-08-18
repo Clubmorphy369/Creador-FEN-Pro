@@ -856,4 +856,22 @@
         return new Blob([u8arr], { type: mime });
     }
 
+    // ============================================================
+    //  FUNCIÓN PÚBLICA PARA INVERTIR EL ORDEN DE LAS IMÁGENES
+    // ============================================================
+    window.invertirOrdenCrop = function() {
+        if (!cropImages || cropImages.length <= 1) {
+            window.showNotification('No hay suficientes imágenes para invertir.', true);
+            return;
+        }
+        // Invertir el array
+        cropImages.reverse();
+        // Recalcular el índice (para mantener la misma imagen)
+        const newIndex = cropImages.length - 1 - cropIndex;
+        cropIndex = newIndex;
+        // Recargar la imagen actual
+        loadCropImage();
+        window.showNotification('Orden de imágenes invertido ✅');
+    };
+
 })();
