@@ -705,7 +705,9 @@ tr:hover {
     min-width: 60px;
 }
 
-/* ===== RESPONSIVE ===== */
+/* ============================================================
+   MEJORAS TÁCTILES PARA MÓVIL Y TABLET
+   ============================================================ */
 @media (max-width: 1024px) {
     .app-container {
         padding: 22px;
@@ -768,25 +770,36 @@ tr:hover {
         height: 360px;
     }
 
+    /* ===== TI RADORES MÁS GRANDES PARA TÁCTIL ===== */
     .resize-handle {
-        width: 24px;
-        height: 24px;
+        width: 26px !important;
+        height: 26px !important;
+        border-width: 3px !important;
     }
     .resize-nw,
     .resize-ne {
-        top: -12px;
+        top: -13px !important;
     }
     .resize-sw,
     .resize-se {
-        bottom: -12px;
+        bottom: -13px !important;
     }
     .resize-nw,
     .resize-sw {
-        left: -12px;
+        left: -13px !important;
     }
     .resize-ne,
     .resize-se {
-        right: -12px;
+        right: -13px !important;
+    }
+
+    .crop-box .crop-close {
+        width: 24px !important;
+        height: 24px !important;
+        font-size: 14px !important;
+        line-height: 24px !important;
+        top: -12px !important;
+        right: -12px !important;
     }
 
     .gallery {
@@ -826,5 +839,27 @@ tr:hover {
     #cropContainer,
     #autoCropContainer {
         height: 280px;
+    }
+
+    .resize-handle {
+        width: 30px !important;
+        height: 30px !important;
+        border-width: 3px !important;
+    }
+    .resize-nw,
+    .resize-ne {
+        top: -15px !important;
+    }
+    .resize-sw,
+    .resize-se {
+        bottom: -15px !important;
+    }
+    .resize-nw,
+    .resize-sw {
+        left: -15px !important;
+    }
+    .resize-ne,
+    .resize-se {
+        right: -15px !important;
     }
 }
